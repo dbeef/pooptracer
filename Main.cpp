@@ -8,8 +8,8 @@
 
 #include <SDL.h>
 
-#define WIN_WIDTH 320
-#define WIN_HEIGHT 240
+#define WIN_WIDTH 160
+#define WIN_HEIGHT 120
 
 // TODO: Optimize
 // TODO: Cleanup + CMake project
@@ -109,6 +109,14 @@ public:
             intersection_distance
         );
 
+        const auto intersection_point = in.position + (in.direction * intersection_distance);
+
+        const glm::vec3 normal = glm::normalize(intersection_point - _pos);
+
+        out.direction = glm::normalize(normal + in.direction);
+        out.position = intersection_point;
+        // out.direction.z *= -1;
+
         return intersection ? intersection_distance : 0;
     }
 private:
@@ -130,6 +138,10 @@ public:
         );
 
         const auto intersection_point = in.position + (in.direction * intersection_distance);
+        out.direction = glm::normalize(_normal + in.direction);
+        out.position = intersection_point;
+        out.direction.z *= -1;
+
         if (static_cast<int>(intersection_point.x) % 2)
         {
             color = white;
@@ -138,11 +150,6 @@ public:
         {
             color = black;
         }
-
-        out.direction = glm::normalize(_normal + in.direction);
-        out.position = intersection_point;
-
-        out.direction.z *= -1;
 
         return intersection ? intersection_distance : 0;
     }
@@ -209,7 +216,8 @@ void update_raytracer()
     static float timer = 0;
     timer += 0.05f;
 
-    new_pos.z -= std::sin(timer) / 10;
+    new_pos.y += std::sin(timer) / 10;
+    new_pos.x += std::cos(timer) / 10;
 
     sphere->set_position(new_pos);
 
