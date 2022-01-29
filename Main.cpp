@@ -11,6 +11,10 @@
 #define WIN_WIDTH 320
 #define WIN_HEIGHT 240
 
+// TODO: Optimize
+// TODO: Cleanup + CMake project
+// TODO: Ray reflection from surfaces
+
 uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
 
 struct Color
@@ -20,6 +24,9 @@ struct Color
     uint8_t b;
 
     std::size_t total() const { return r + g + b; };
+    Color operator+(const Color& other) { return Color{r + other.r, g + other.g, b + other.b}; }
+    Color operator-(const Color& other) { return Color{r + other.r, g + other.g, b + other.b}; }
+    Color operator*(const float& v) { return Color{r * v, g * v, b * v}; }
 };
 
 static Color white = {255, 255, 255};
@@ -72,45 +79,31 @@ struct Ray
     glm::vec3 direction{};
 };
 
-int dot(const glm::vec3& v1, const glm::vec3& v2)
-{
-    return (v1.x * v2.x) + (v1.y * v2.y) + (v1.z * v2.z);
-}
-
-glm::vec3 cross(const glm::vec3& v1, const glm::vec3& v2)
-{
-    glm::vec3 out;
-
-    out.x = (v1.y * v2.z) - (v1.z * v2.y);
-    out.y = -(v1.x * v2.z - v1.z * v2.x);
-    out.z = (v1.x * v2.y) - (v1.y * v2.x);
-
-    return out;
-}
-
 class SceneEntity
 {
 public:
-    SceneEntity(const glm::vec3& pos, const Color& color) : _pos(pos), _color(color) {}
-    virtual float intersection(const Ray&) = 0;
+    SceneEntity(const glm::vec3& pos) : _pos(pos) {}
+    virtual float intersection(const Ray& in, Ray& out, Color& color) = 0;
+    // TODO: Return reflected ray
+    // TODO: Return color at place of intersection
     void set_position(const glm::vec3& pos) { _pos = pos; }
     const glm::vec3& get_position() const { return _pos; }
-    const Color& get_color() const { return _color; } 
 protected:
     glm::vec3 _pos;
-    Color _color;
 };
 
 class Sphere : public SceneEntity
 {
 public:
-    Sphere(const glm::vec3& pos, float radius) : SceneEntity(pos, red), _radius_squared(radius * radius) { }
-    float intersection(const Ray& r) override
+    Sphere(const glm::vec3& pos, float radius) : SceneEntity(pos), _radius_squared(radius * radius) { }
+    float intersection(const Ray& in, Ray& out, Color& color) override
     {
+        color = red;
+
         float intersection_distance;
         const bool intersection = glm::intersectRaySphere(
-            r.position,
-            r.direction,
+            in.position,
+            in.direction,
             _pos,
             _radius_squared,
             intersection_distance
@@ -125,16 +118,32 @@ private:
 class Plane : public SceneEntity
 {
 public:
-    Plane(const glm::vec3& pos, const glm::vec3& normal) : SceneEntity(pos, blue), _normal(normal)
+    Plane(const glm::vec3& pos, const glm::vec3& normal) : SceneEntity(pos), _normal(normal)
     {
     }
 
-    float intersection(const Ray& r) override
+    float intersection(const Ray& in, Ray& out, Color& color) override
     {
         float intersection_distance;
         const bool intersection = glm::intersectRayPlane(
-            r.position, r.direction, _pos, _normal, intersection_distance
+            in.position, in.direction, _pos, _normal, intersection_distance
         );
+
+        const auto intersection_point = in.position + (in.direction * intersection_distance);
+        if (static_cast<int>(intersection_point.x) % 2)
+        {
+            color = white;
+        }
+        else
+        {
+            color = black;
+        }
+
+        out.direction = glm::normalize(_normal + in.direction);
+        out.position = intersection_point;
+
+        out.direction.z *= -1;
+
         return intersection ? intersection_distance : 0;
     }
 private:
@@ -186,8 +195,8 @@ void init_raytracer()
     const glm::vec3 plane_normal = {0, 0 , 1};
     raytracer.scene.push_back(std::make_shared<Plane>(plane_pos, plane_normal));
     raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 4, -0.5f}, 1));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 4, -0.5f}, 1));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
+    // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 4, -0.5f}, 1));
+    // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
 }
 
 void update_raytracer()
@@ -206,15 +215,21 @@ void update_raytracer()
 
     for (const auto& r : raytracer.rays)
     {
+        Color color;
+        Ray out;
         float intersection_distance = 999999;
         std::shared_ptr<SceneEntity> collided_entity = nullptr;
         for (const auto& scene_entity : raytracer.scene)
         {
-            const float id = scene_entity->intersection(r);
+            Color temp_c;
+            Ray temp_out;
+            const float id = scene_entity->intersection(r, temp_out, temp_c);
             if (id != 0 && id < intersection_distance)
             {
                 intersection_distance = id;
                 collided_entity = scene_entity;
+                color = temp_c;
+                out = temp_out;
             }
         }
 
@@ -224,13 +239,33 @@ void update_raytracer()
         } 
         else
         {
-            const auto distance_modifier = (intersection_distance * 100 <= 255.0f ? intersection_distance * 100 : 255) / 255;
-            const auto& color = collided_entity->get_color();
-            auto color_distance_adjusted = color;
-            color_distance_adjusted.r *= distance_modifier;
-            color_distance_adjusted.g *= distance_modifier;
-            color_distance_adjusted.b *= distance_modifier;
-            set_pixel(r.x, r.y, color_distance_adjusted);
+            bool second_reflection = false;
+            Color second_color = {0, 0, 0};
+            for (const auto& scene_entity : raytracer.scene)
+            {
+                if (collided_entity == scene_entity)
+                {
+                    continue;
+                }
+
+                Color temp_c;
+                Ray temp_out;
+                const float id = scene_entity->intersection(out, temp_out, temp_c);
+                if (id != 0 && id < intersection_distance)
+                {
+                    second_color = temp_c;
+                    second_reflection = true;
+                }
+            }
+
+            // Calculate reflected ray:
+            // TODO: Walk over each scene entity, test for intersection
+            // Apply color, blend if reflection found another scene entity:
+            // TODO: Reflectivity parameter
+            const auto out_color = (color * (second_reflection ? 0.5f : 1.0f))
+                                     + (second_color * 0.5f);
+
+            set_pixel(r.x, r.y, out_color);
         } 
     }
 } 
