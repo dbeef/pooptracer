@@ -152,7 +152,9 @@ void init_raytracer()
             rays.push_back(r);
         }
     }
+
     // Fill scene:
+    // TODO: Should be defined outside code, i.e in YML
     const glm::vec3 plane_pos = {0, 0, 0};
     const glm::vec3 plane_normal = {0, 0, 1};
     scene.push_back(std::make_shared<Plane>(plane_pos, plane_normal));
