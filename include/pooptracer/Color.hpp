@@ -40,7 +40,7 @@ struct Color
     static constexpr Color black() { return {0, 0, 0, 0}; }
     static constexpr Color red() { return {255, 0, 0, 0}; }
     static constexpr Color blue() { return {0, 0, 255, 0}; }
-    static constexpr Color light_blue() { return {50, 50, 255, 0}; }
+    static constexpr Color light_blue() { return {25, 150, 255, 0}; }
     static constexpr Color green() { return {0, 255, 0, 0}; }
     static constexpr Color yellow() { return {0, 255, 255, 0}; }
 };

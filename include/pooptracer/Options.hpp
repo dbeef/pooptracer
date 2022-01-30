@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <glm/glm.hpp>
 
+#include "pooptracer/Color.hpp"
+
 using Res_t = std::uint32_t;
 
 struct Options
@@ -16,4 +18,5 @@ struct Options
     static constexpr float CAMERA_F = 100;
     static constexpr glm::vec3 CAMERA_POSITION = {0, 0, -1};
     static constexpr unsigned int SEED = 0;
+    static constexpr Color BACKGROUND = Color::light_blue();
 };

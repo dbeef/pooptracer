@@ -72,7 +72,7 @@ public:
 
                 if (collided_entity == nullptr)
                 {
-                    framebuffer.set_pixel(r.x, r.y, Color::black());
+                    framebuffer.set_pixel(r.x, r.y, Options::BACKGROUND);
                 }
                 else
                 {
