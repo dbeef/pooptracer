@@ -2,240 +2,49 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/intersect.hpp>
 
-#include <vector>
-#include <iostream>
-#include <memory>
-#include <random>
-#include <thread>
-#include <mutex>
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <random>
+#include <thread>
+#include <vector>
+
+#include "raytracer/Color.hpp"
+#include "raytracer/Framebuffer.hpp"
+#include "raytracer/scene/Plane.hpp"
+#include "raytracer/scene/SceneEntity.hpp"
+#include "raytracer/scene/Sphere.hpp"
+#include "raytracer/scene/Triangle.hpp"
 
 namespace
 {
-constexpr std::size_t WIN_WIDTH = 320;
-constexpr std::size_t WIN_HEIGHT = 240;
 constexpr std::size_t THREAD_COUNT = 16;
-constexpr std::size_t RAYS_TOTAL = WIN_WIDTH * WIN_HEIGHT;
-constexpr std::size_t RAYS_PER_THREAD = std::ceil(static_cast<float>(WIN_WIDTH * WIN_HEIGHT) / THREAD_COUNT);
-
-uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
-}
-
-// TODO: Split into multiple files
-// TODO: Scene defined in YML / Json
-// TODO: Cleanup + CMake project
-// TODO: Move raytracing core to separate target, add benchmark subtarget
-// TODO: Lambda defining transformation
-// TODO: Fixed timestep - lock fps
-// TODO: Add rotating API to SceneEntity
-
-struct Color
-{
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-
-    std::size_t total() const { return r + g + b; };
-    Color operator+(const Color& other) { return Color{r + other.r, g + other.g, b + other.b}; }
-    Color operator-(const Color& other) { return Color{r + other.r, g + other.g, b + other.b}; }
-    Color operator*(const float& v) { return Color{r * v, g * v, b * v}; }
-};
-
-static Color white = {255, 255, 255};
-static Color black = {0, 0, 0};
-static Color red = {255, 0, 0};
-static Color blue= {0, 0, 255};
-static Color light_blue= {50, 50, 255};
-static Color green= {0, 255, 0};
-
-Color* get_pixel(int n)
-{
-    return reinterpret_cast<Color*>(&pixels[4 * n]);
-}
-
-Color* get_pixel(int x, int y)
-{
-    std::size_t index = (y * WIN_WIDTH) + x;
-    return get_pixel(index);
-}
-
-void set_pixel(int n, Color color)
-{
-    pixels[4 * n + 0] = color.r;
-    pixels[4 * n + 1] = color.g;
-    pixels[4 * n + 2] = color.b;
-}
-
-void set_pixel(int x, int y, Color color)
-{
-    std::size_t index = (y * WIN_WIDTH) + x;
-    set_pixel(index, color);
-}
+constexpr std::size_t RAYS_TOTAL = Framebuffer::WIDTH * Framebuffer::HEIGHT;
+constexpr std::size_t RAYS_PER_THREAD = std::ceil(static_cast<float>(Framebuffer::WIDTH * Framebuffer::HEIGHT) / THREAD_COUNT);
+} // namespace
 
 struct Camera
 {
-    explicit Camera(glm::vec3 pos) : position(pos) {};
+    explicit Camera(glm::vec3 pos)
+        : position(pos){};
+
     Camera(){};
 
     static constexpr float f = 100;
-    int w = WIN_WIDTH;
-    int h = WIN_HEIGHT;
+    int w = Framebuffer::WIDTH;
+    int h = Framebuffer::HEIGHT;
     glm::vec3 position;
-};
-
-struct Ray
-{
-    int x;
-    int y;
-
-    glm::vec3 position{};
-    glm::vec3 direction{};
-};
-
-class SceneEntity
-{
-public:
-    // TODO: Rotate
-    SceneEntity(const glm::vec3& pos) : _pos(pos) {}
-    virtual float intersection(const Ray& in, Ray& out, Color& color) = 0;
-    void set_position(const glm::vec3& pos) { _pos = pos; }
-    const glm::vec3& get_position() const { return _pos; }
-    virtual void recalc() = 0;
-protected:
-    glm::vec3 _pos;
-};
-
-class Triangle : public SceneEntity
-{
-public:
-    Triangle(const glm::vec3 origin, const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3)
-        : _v1(v1), _v2(v2), _v3(v3), SceneEntity(origin)
-    {
-        // TODO: Calc normal
-        // TODO: Calc normal in plane
-        // TODO: Function to change pos / rotate
-        recalc();
-    }
-
-    void recalc() override
-    {
-        _v1_translated = _v1 + _pos;
-        _v2_translated = _v2 + _pos;
-        _v3_translated = _v3 + _pos;
-        _normal = glm::cross(_v1_translated, _v2_translated);
-    };
-
-    float intersection(const Ray& in, Ray& out, Color& color) override
-    {
-        color = light_blue;
-
-        glm::vec2 bary;
-
-        float intersection_distance;
-        const bool intersection = glm::intersectRayTriangle(
-            in.position, in.direction, _v1_translated, _v2_translated, _v3_translated, bary, intersection_distance
-        );
-
-        const auto intersection_point = in.position + (in.direction * intersection_distance);
-        out.direction = glm::normalize(_normal + in.direction);
-        out.position = intersection_point;
-
-        return intersection ? intersection_distance : 0;
-    }
-private:
-    glm::vec3 _v1;    
-    glm::vec3 _v2;    
-    glm::vec3 _v3;
-    glm::vec3 _v1_translated;    
-    glm::vec3 _v2_translated;    
-    glm::vec3 _v3_translated; 
-    glm::vec3 _normal; 
-};
-
-class Sphere : public SceneEntity
-{
-public:
-
-    void recalc() override {};
-    Sphere(const glm::vec3& pos, float radius) : SceneEntity(pos), _radius_squared(radius * radius) { }
-    float intersection(const Ray& in, Ray& out, Color& color) override
-    {
-        color = _color;
-
-        float intersection_distance;
-        const bool intersection = glm::intersectRaySphere(
-            in.position,
-            in.direction,
-            _pos,
-            _radius_squared,
-            intersection_distance
-        );
-
-        const auto intersection_point = in.position + (in.direction * intersection_distance);
-
-        const glm::vec3 normal = glm::normalize(intersection_point - _pos);
-
-        out.direction = glm::normalize(normal + in.direction);
-        out.position = intersection_point;
-
-        return intersection ? intersection_distance : 0;
-    }
-private:
-    static Color random_color()
-    {
-        return Color{std::rand() % 255, std::rand() % 255, std::rand() % 255};
-    }
-
-    const Color _color = random_color();
-    const float _radius_squared;
-};
-
-class Plane : public SceneEntity
-{
-public:
-
-    void recalc() override {};
-    Plane(const glm::vec3& pos, const glm::vec3& normal) : SceneEntity(pos), _normal(normal)
-    {
-    }
-
-    float intersection(const Ray& in, Ray& out, Color& color) override
-    {
-        float intersection_distance;
-        const bool intersection = glm::intersectRayPlane(
-            in.position, in.direction, _pos, _normal, intersection_distance
-        );
-
-        const auto intersection_point = in.position + (in.direction * intersection_distance);
-        out.direction = glm::normalize(_normal + in.direction);
-        out.position = intersection_point;
-        out.direction.z *= -1;
-
-        if (static_cast<int>(intersection_point.x) % 2)
-        {
-            color = white;
-        }
-        else
-        {
-            color = black;
-        }
-
-        return intersection ? intersection_distance : 0;
-    }
-private:
-    const glm::vec3 _normal;
 };
 
 std::atomic<bool> app_quit{false};
 std::atomic<std::size_t> threads_finished_count{THREAD_COUNT};
-
-struct
-{
-    Camera camera = Camera(glm::vec3(0.0f, 0.0f, -1.0f));
-    std::vector<std::shared_ptr<SceneEntity>> scene;
-} raytracer;
+Camera camera = Camera(glm::vec3(0.0f, 0.0f, -1.0f));
+std::vector<std::shared_ptr<SceneEntity>> scene;
+Framebuffer framebuffer;
 
 struct RayThread
 {
@@ -246,7 +55,7 @@ struct RayThread
 
     void loop()
     {
-        while (!app_quit)    
+        while (!app_quit)
         {
             std::unique_lock lck(mtx);
             // TODO: Spurious wakeup lambda check
@@ -258,7 +67,7 @@ struct RayThread
                 Ray out;
                 float intersection_distance = 999999;
                 std::shared_ptr<SceneEntity> collided_entity = nullptr;
-                for (const auto& scene_entity : raytracer.scene)
+                for (const auto& scene_entity : scene)
                 {
                     Color temp_c;
                     Ray temp_out;
@@ -271,22 +80,21 @@ struct RayThread
                         out = temp_out;
                     }
                 }
-         
+
                 if (collided_entity == nullptr)
-                { 
-                    set_pixel(r.x, r.y, black);
-                } 
-                else
+                {
+                    framebuffer.set_pixel(r.x, r.y, Color::black());
+                } else
                 {
                     bool second_reflection = false;
                     Color second_color = {0, 0, 0};
-                    for (const auto& scene_entity : raytracer.scene)
+                    for (const auto& scene_entity : scene)
                     {
                         if (collided_entity == scene_entity)
                         {
                             continue;
                         }
-         
+
                         Color temp_c;
                         Ray temp_out;
                         const float id = scene_entity->intersection(out, temp_out, temp_c);
@@ -296,12 +104,12 @@ struct RayThread
                             second_reflection = true;
                         }
                     }
-         
+
                     const auto out_color = (color * (second_reflection ? 0.5f : 1.0f))
-                                             + (second_color * 0.5f);
-         
-                    set_pixel(r.x, r.y, out_color);
-                } 
+                                           + (second_color * 0.5f);
+
+                    framebuffer.set_pixel(r.x, r.y, out_color);
+                }
             }
 
             threads_finished_count++;
@@ -318,11 +126,11 @@ void init_raytracer()
     std::vector<Ray> rays;
 
     // Generate rays:
-    const auto half_height = raytracer.camera.h / 2.0f;
-    const auto half_width = raytracer.camera.w / 2.0f;
-    for (int y = 0; y < raytracer.camera.h; y++)
+    const auto half_height = camera.h / 2.0f;
+    const auto half_width = camera.w / 2.0f;
+    for (int y = 0; y < camera.h; y++)
     {
-        for (int x = 0; x < raytracer.camera.w; x++)
+        for (int x = 0; x < camera.w; x++)
         {
             // Generate rays
             // Ray coming out of camera 'f' and crossing through the xy on matrix:
@@ -334,11 +142,11 @@ void init_raytracer()
             // y
             // ^
             // |
-            // z---> x 
+            // z---> x
             // x - left/right, y - forward/backward, z - up/down
 
-            r.position = raytracer.camera.position;
-           
+            r.position = camera.position;
+
             r.direction.x = x - half_width;
             r.direction.y = Camera::f;
             r.direction.z = y - half_height;
@@ -350,26 +158,24 @@ void init_raytracer()
     }
     // Fill scene:
     const glm::vec3 plane_pos = {0, 0, 0};
-    const glm::vec3 plane_normal = {0, 0 , 1};
-    raytracer.scene.push_back(std::make_shared<Plane>(plane_pos, plane_normal));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 2, -0.5f}, 1));
-    raytracer.scene.push_back(std::make_shared<Triangle>(
-        glm::vec3{2, 2, -0.5f}, 
-        glm::vec3{1, 0, 0}, glm::vec3{0, 1.0f, 0}, glm::vec3{0, 0.5f, -1}
-    ));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 5, -0.5f}, 1));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 2, -1.0f}, 0.3));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0.5, 0.5, -0.5f}, 0.20));
+    const glm::vec3 plane_normal = {0, 0, 1};
+    scene.push_back(std::make_shared<Plane>(plane_pos, plane_normal));
+    scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 2, -0.5f}, 1));
+    scene.push_back(std::make_shared<Triangle>(
+        glm::vec3{2, 2, -0.5f},
+        glm::vec3{1, 0, 0}, glm::vec3{0, 1.0f, 0}, glm::vec3{0, 0.5f, -1}));
+    scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 5, -0.5f}, 1));
+    scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
+    scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 2, -1.0f}, 0.3));
+    scene.push_back(std::make_shared<Sphere>(glm::vec3{0.5, 0.5, -0.5f}, 0.20));
 
     std::size_t ray_index = 0;
     for (auto& ray_thread : threads)
     {
         for (std::size_t current = ray_index * RAYS_PER_THREAD,
-              end = (ray_index + 1) * RAYS_PER_THREAD;
+                         end = (ray_index + 1) * RAYS_PER_THREAD;
              current < end;
-             current++
-         )
+             current++)
         {
             if (current >= RAYS_TOTAL)
             {
@@ -379,55 +185,59 @@ void init_raytracer()
             ray_thread.rays.push_back(rays.at(current));
         }
         std::cout << "This thread has: " << ray_thread.rays.size() << " rays  " << std::endl;
-        ray_thread.thread = std::thread(&RayThread::loop, &ray_thread); 
+        ray_thread.thread = std::thread(&RayThread::loop, &ray_thread);
         ray_index++;
     }
 }
 
 void update_raytracer()
 {
-} 
- 
-int main(int argc, char **argv) {
- 
+}
+
+int main(int argc, char** argv)
+{
     init_raytracer();
- 
+
     // SDL init
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+    {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
         return 1;
     }
- 
+
     // create SDL window
-    SDL_Window *window = SDL_CreateWindow("sdl2_pixelbuffer",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        WIN_WIDTH * 4,
-        WIN_HEIGHT * 4,
-        SDL_WINDOW_RESIZABLE);
-    if (window == NULL) {
+    SDL_Window* window = SDL_CreateWindow("sdl2_pixelbuffer",
+                                          SDL_WINDOWPOS_CENTERED,
+                                          SDL_WINDOWPOS_CENTERED,
+                                          Framebuffer::WIDTH * 4,
+                                          Framebuffer::HEIGHT * 4,
+                                          SDL_WINDOW_RESIZABLE);
+    if (window == NULL)
+    {
         SDL_Log("Unable to create window: %s", SDL_GetError());
         return 1;
     }
 
     // create renderer
-    SDL_Renderer *renderer = SDL_CreateRenderer(
+    SDL_Renderer* renderer = SDL_CreateRenderer(
         window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (renderer == NULL) {
+    if (renderer == NULL)
+    {
         SDL_Log("Unable to create renderer: %s", SDL_GetError());
         return 1;
     }
-    
-    SDL_RenderSetLogicalSize(renderer, WIN_WIDTH, WIN_HEIGHT);
+
+    SDL_RenderSetLogicalSize(renderer, Framebuffer::WIDTH, Framebuffer::HEIGHT);
 
     // create texture
-    SDL_Texture *texture = SDL_CreateTexture(
+    SDL_Texture* texture = SDL_CreateTexture(
         renderer,
         SDL_PIXELFORMAT_RGBA32,
         SDL_TEXTUREACCESS_STREAMING,
-        WIN_WIDTH,
-        WIN_HEIGHT);
-    if (texture == NULL) {
+        Framebuffer::WIDTH,
+        Framebuffer::HEIGHT);
+    if (texture == NULL)
+    {
         SDL_Log("Unable to create texture: %s", SDL_GetError());
         return 1;
     }
@@ -435,9 +245,12 @@ int main(int argc, char **argv) {
     // main loop
     bool should_quit = false;
     SDL_Event e;
-    while (!should_quit) {
-        while (SDL_PollEvent(&e) != 0) {
-            if (e.type == SDL_QUIT) {
+    while (!should_quit)
+    {
+        while (SDL_PollEvent(&e) != 0)
+        {
+            if (e.type == SDL_QUIT)
+            {
                 should_quit = true;
             }
         }
@@ -445,36 +258,35 @@ int main(int argc, char **argv) {
         // update texture with new data
         int texture_pitch = 0;
         void* texture_pixels = NULL;
-        if (SDL_LockTexture(texture, NULL, &texture_pixels, &texture_pitch) != 0) {
+        if (SDL_LockTexture(texture, NULL, &texture_pixels, &texture_pitch) != 0)
+        {
             SDL_Log("Unable to lock texture: %s", SDL_GetError());
-        }
-        else {
-
+        } else
+        {
             while (threads_finished_count != THREAD_COUNT)
             {
             }
 
-            memcpy(texture_pixels, pixels, texture_pitch * WIN_HEIGHT);
-
+            memcpy(texture_pixels, framebuffer.data(), texture_pitch * Framebuffer::HEIGHT);
 
             for (int i = 1; i < 2; i++)
             {
-                auto& sphere = raytracer.scene.at(i);
+                auto& sphere = scene.at(i);
                 const auto& position = sphere->get_position();
                 glm::vec3 new_pos = position;
                 static float timer = 0;
                 timer += 0.05f;
-             
+
                 new_pos.y += std::sin(timer) / 20;
                 new_pos.x += std::cos(timer) / 20;
-             
+
                 sphere->set_position(new_pos);
-             
+
                 sphere->recalc();
             }
 
             threads_finished_count = 0;
-            
+
             for (auto& thread : threads)
             {
                 thread.cv.notify_one();
@@ -483,12 +295,9 @@ int main(int argc, char **argv) {
 
         SDL_UnlockTexture(texture);
 
-        // render on screen
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
-
-        // update_raytracer();
     }
 
     SDL_DestroyTexture(texture);
@@ -506,4 +315,3 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-

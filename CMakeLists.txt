@@ -8,7 +8,7 @@ find_package(glm CONFIG REQUIRED)
 
 add_executable(raytracer 
     src/Main.cpp
-)
+        include/raytracer/scene/SceneEntity.hpp include/raytracer/Color.hpp include/raytracer/Ray.hpp include/raytracer/scene/Plane.hpp include/raytracer/scene/Sphere.hpp include/raytracer/scene/Triangle.hpp include/raytracer/Framebuffer.hpp)
 target_include_directories(raytracer PRIVATE
     include
 )
