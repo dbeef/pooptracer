@@ -1,119 +1,38 @@
 #include <SDL.h>
+#include <fmt/format.h>
 #include <glm/glm.hpp>
 #include <glm/gtx/intersect.hpp>
-#include <fmt/format.h>
 
 #include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <thread>
 #include <vector>
-#include <exception>
 
 #include "raytracer/Color.hpp"
-#include "raytracer/Options.hpp"
 #include "raytracer/Framebuffer.hpp"
+#include "raytracer/Options.hpp"
+#include "raytracer/RayThread.hpp"
 #include "raytracer/scene/Plane.hpp"
 #include "raytracer/scene/SceneEntity.hpp"
 #include "raytracer/scene/Sphere.hpp"
 #include "raytracer/scene/Triangle.hpp"
 
-struct Camera
+namespace
 {
-    explicit Camera(glm::vec3 pos)
-        : position(pos){};
-
-    Camera(){};
-
-    static constexpr float f = 100;
-    int w = Options::WIDTH;
-    int h = Options::HEIGHT;
-    glm::vec3 position;
-};
-
 std::atomic<bool> app_quit{false};
-std::atomic<std::size_t> threads_finished_count{Options::THREAD_COUNT};
-Camera camera = Camera(glm::vec3(0.0f, 0.0f, -1.0f));
+std::atomic<std::size_t> threads_finished_counter{Options::THREAD_COUNT};
+Framebuffer framebuffer{};
 std::vector<std::shared_ptr<SceneEntity>> scene;
-Framebuffer framebuffer;
-
-struct RayThread
-{
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::vector<Ray> rays;
-    std::thread thread;
-
-    void loop()
-    {
-        while (!app_quit)
-        {
-            std::unique_lock lck(mtx);
-            // TODO: Spurious wakeup lambda check
-            cv.wait(lck);
-
-            for (const auto& r : rays)
-            {
-                Color color;
-                Ray out;
-                float intersection_distance = 999999;
-                std::shared_ptr<SceneEntity> collided_entity = nullptr;
-                for (const auto& scene_entity : scene)
-                {
-                    Color temp_c;
-                    Ray temp_out;
-                    const float id = scene_entity->intersection(r, temp_out, temp_c);
-                    if (id != 0 && id < intersection_distance)
-                    {
-                        intersection_distance = id;
-                        collided_entity = scene_entity;
-                        color = temp_c;
-                        out = temp_out;
-                    }
-                }
-
-                if (collided_entity == nullptr)
-                {
-                    framebuffer.set_pixel(r.x, r.y, Color::black());
-                } else
-                {
-                    bool second_reflection = false;
-                    Color second_color = {0, 0, 0};
-                    for (const auto& scene_entity : scene)
-                    {
-                        if (collided_entity == scene_entity)
-                        {
-                            continue;
-                        }
-
-                        Color temp_c;
-                        Ray temp_out;
-                        const float id = scene_entity->intersection(out, temp_out, temp_c);
-                        if (id != 0 && id < intersection_distance)
-                        {
-                            second_color = temp_c;
-                            second_reflection = true;
-                        }
-                    }
-
-                    const auto out_color = (color * (second_reflection ? 0.5f : 1.0f))
-                                           + (second_color * 0.5f);
-
-                    framebuffer.set_pixel(r.x, r.y, out_color);
-                }
-            }
-
-            threads_finished_count++;
-        }
-    }
-};
-
 std::array<RayThread, Options::THREAD_COUNT> threads;
+} // namespace
 
 void init_raytracer()
 {
@@ -122,11 +41,11 @@ void init_raytracer()
     std::vector<Ray> rays;
 
     // Generate rays:
-    const auto half_height = camera.h / 2.0f;
-    const auto half_width = camera.w / 2.0f;
-    for (int y = 0; y < camera.h; y++)
+    const auto half_height = Options::HEIGHT / 2.0f;
+    const auto half_width = Options::WIDTH / 2.0f;
+    for (int y = 0; y < Options::HEIGHT; y++)
     {
-        for (int x = 0; x < camera.w; x++)
+        for (int x = 0; x < Options::WIDTH; x++)
         {
             // Generate rays
             // Ray coming out of camera 'f' and crossing through the xy on matrix:
@@ -141,10 +60,10 @@ void init_raytracer()
             // z---> x
             // x - left/right, y - forward/backward, z - up/down
 
-            r.position = camera.position;
+            r.position = Options::CAMERA_POSITION;
 
             r.direction.x = x - half_width;
-            r.direction.y = Camera::f;
+            r.direction.y = Options::CAMERA_F;
             r.direction.z = y - half_height;
 
             r.direction = glm::normalize(r.direction);
@@ -168,7 +87,7 @@ void init_raytracer()
     scene.push_back(std::make_shared<Sphere>(glm::vec3{0.5, 0.5, -0.5f}, 0.20));
 
     std::size_t ray_index = 0;
-    for (auto& ray_thread : threads)
+    for (auto& thread : threads)
     {
         for (std::size_t current = ray_index * Options::RAYS_PER_THREAD,
                          end = (ray_index + 1) * Options::RAYS_PER_THREAD;
@@ -180,10 +99,10 @@ void init_raytracer()
                 break;
             }
 
-            ray_thread.rays.push_back(rays.at(current));
+            thread.add_ray(rays.at(current));
         }
-        std::cout << "This thread has: " << ray_thread.rays.size() << " rays  " << std::endl;
-        ray_thread.thread = std::thread(&RayThread::loop, &ray_thread);
+
+        thread.start(app_quit, threads_finished_counter, framebuffer, scene);
         ray_index++;
     }
 }
@@ -209,7 +128,7 @@ try
         throw std::runtime_error(fmt::format("Unable to create window: %s", SDL_GetError()));
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer( window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (!renderer)
     {
@@ -260,17 +179,17 @@ try
         const auto lock_result = SDL_LockTexture(texture, nullptr, &texture_pixels, &texture_pitch);
         assert(lock_result == 0);
 
-        while (threads_finished_count != Options::THREAD_COUNT)
+        while (threads_finished_counter != Options::THREAD_COUNT)
         {
             // Active waiting while ray-threads have not finished writing to buffer
         }
 
         memcpy(texture_pixels, framebuffer.data(), texture_pitch * Options::HEIGHT);
-        threads_finished_count = 0;
+        threads_finished_counter = 0;
 
         for (auto& thread : threads)
         {
-            thread.cv.notify_one();
+            thread.notify();
         }
 
         SDL_UnlockTexture(texture);
@@ -288,20 +207,16 @@ try
 
     for (auto& ray_thread : threads)
     {
-        ray_thread.cv.notify_one();
-        ray_thread.thread.join();
+        ray_thread.join();
     }
 
     return EXIT_SUCCESS;
-}
-catch (const std::exception& e)
+} catch (const std::exception& e)
 {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;
     return EXIT_FAILURE;
-}
-catch (...)
+} catch (...)
 {
     std::cerr << "Unknown exception" << std::endl;
     return EXIT_FAILURE;
 }
-

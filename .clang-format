@@ -15,6 +15,7 @@ BraceWrapping:
   AfterFunction: true
   AfterEnum: true
   AfterObjCDeclaration: true
+  BeforeElse: true
 BreakBeforeBinaryOperators: All
 BreakBeforeBraces: Custom
 ColumnLimit: '0'

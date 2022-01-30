@@ -27,7 +27,8 @@ public:
         if (static_cast<int>(intersection_point.x) % 2)
         {
             color = Color::white();
-        } else
+        }
+        else
         {
             color = Color::black();
         }

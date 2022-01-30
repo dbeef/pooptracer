@@ -16,8 +16,8 @@
 * Extend SceneEntity API - optional lambda defining transformation
 * Extend SceneEntity API - `update` method which would apply optional lambda above
 * Fixed timestep - lock FPS
+* Math is a little shady, make small reproducible scenes (defined in YML) to verify each part 
 
 ### License:
 
 Do whatever you want.
-
