@@ -35,7 +35,16 @@ public:
 private:
     static Color random_color()
     {
-        return Color{static_cast<uint8_t>(std::rand() % 255), static_cast<uint8_t>(std::rand() % 255), static_cast<uint8_t>(std::rand() % 255)};
+        switch (std::rand() % 4)
+        {
+            case 0: return Color::blue();
+            case 1: return Color::green();
+            case 2: return Color::red();
+            case 3: return Color::yellow();
+        }
+
+        assert(false);
+        return {};
     }
 
     const Color _color = random_color();

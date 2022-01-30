@@ -9,7 +9,16 @@ find_package(fmt CONFIG REQUIRED)
 
 add_executable(raytracer 
     src/Main.cpp
-        include/pooptracer/scene/SceneEntity.hpp include/pooptracer/Color.hpp include/pooptracer/Ray.hpp include/pooptracer/scene/Plane.hpp include/pooptracer/scene/Sphere.hpp include/pooptracer/scene/Triangle.hpp include/pooptracer/Framebuffer.hpp include/pooptracer/Options.hpp include/pooptracer/RayThread.hpp)
+    include/pooptracer/scene/SceneEntity.hpp
+    include/pooptracer/Color.hpp
+    include/pooptracer/Ray.hpp
+    include/pooptracer/scene/Plane.hpp
+    include/pooptracer/scene/Sphere.hpp
+    include/pooptracer/scene/Triangle.hpp
+    include/pooptracer/Framebuffer.hpp
+    include/pooptracer/Options.hpp
+    include/pooptracer/RayThread.hpp
+)
 target_include_directories(raytracer PRIVATE
     include
 )

@@ -6,7 +6,7 @@
 struct Color
 {
     constexpr Color(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a = 0)
-        : r(r), g(b), b(b), a(a)
+        : r(r), g(g), b(b), a(a)
     {
     }
 
@@ -42,4 +42,5 @@ struct Color
     static constexpr Color blue() { return {0, 0, 255, 0}; }
     static constexpr Color light_blue() { return {50, 50, 255, 0}; }
     static constexpr Color green() { return {0, 255, 0, 0}; }
+    static constexpr Color yellow() { return {0, 255, 255, 0}; }
 };
