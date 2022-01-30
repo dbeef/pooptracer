@@ -6,19 +6,37 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <thread>
+#include <mutex>
+#include <array>
+#include <atomic>
+#include <condition_variable>
 
 #include <SDL.h>
 
-#define WIN_WIDTH 320
-#define WIN_HEIGHT 240
+namespace
+{
+constexpr std::size_t WIN_WIDTH = 640;
+constexpr std::size_t WIN_HEIGHT = 480;
+constexpr std::size_t THREAD_COUNT = 16;
+constexpr std::size_t RAYS_TOTAL = WIN_WIDTH * WIN_HEIGHT;
+constexpr std::size_t RAYS_PER_THREAD = std::ceil(static_cast<float>(WIN_WIDTH * WIN_HEIGHT) / THREAD_COUNT);
 
+uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
+}
+
+// Loop:
+// Lock pixels mutex for reading, then copy
+// Notify that rays can be calculated + unlock
+// 
+// Each time thread notified, do one round of calculation and wait for notify
+
+// TODO: Scene defined in YML / Json
 // TODO: Optimize, multiple threads
 // TODO: Cleanup + CMake project
 // TODO: Add rotating triangle
 // TODO: Benchmark project
 // TODO: Lambda defining transformation
-
-uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
 
 struct Color
 {
@@ -218,16 +236,94 @@ private:
     const glm::vec3 _normal;
 };
 
+std::atomic<bool> app_quit{false};
+std::atomic<std::size_t> threads_finished_count{THREAD_COUNT};
+
 struct
 {
     Camera camera = Camera(glm::vec3(0.0f, 0.0f, -1.0f));
-    std::vector<Ray> rays;
     std::vector<std::shared_ptr<SceneEntity>> scene;
 } raytracer;
+
+struct RayThread
+{
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::vector<Ray> rays;
+    std::thread thread;
+
+    void loop()
+    {
+        while (!app_quit)    
+        {
+            std::unique_lock lck(mtx);
+            // TODO: Spurious wakeup lambda check
+            cv.wait(lck);
+
+            for (const auto& r : rays)
+            {
+                Color color;
+                Ray out;
+                float intersection_distance = 999999;
+                std::shared_ptr<SceneEntity> collided_entity = nullptr;
+                for (const auto& scene_entity : raytracer.scene)
+                {
+                    Color temp_c;
+                    Ray temp_out;
+                    const float id = scene_entity->intersection(r, temp_out, temp_c);
+                    if (id != 0 && id < intersection_distance)
+                    {
+                        intersection_distance = id;
+                        collided_entity = scene_entity;
+                        color = temp_c;
+                        out = temp_out;
+                    }
+                }
+         
+                if (collided_entity == nullptr)
+                { 
+                    set_pixel(r.x, r.y, black);
+                } 
+                else
+                {
+                    bool second_reflection = false;
+                    Color second_color = {0, 0, 0};
+                    for (const auto& scene_entity : raytracer.scene)
+                    {
+                        if (collided_entity == scene_entity)
+                        {
+                            continue;
+                        }
+         
+                        Color temp_c;
+                        Ray temp_out;
+                        const float id = scene_entity->intersection(out, temp_out, temp_c);
+                        if (id != 0 && id < intersection_distance)
+                        {
+                            second_color = temp_c;
+                            second_reflection = true;
+                        }
+                    }
+         
+                    const auto out_color = (color * (second_reflection ? 0.5f : 1.0f))
+                                             + (second_color * 0.5f);
+         
+                    set_pixel(r.x, r.y, out_color);
+                } 
+            }
+
+            threads_finished_count++;
+        }
+    }
+};
+
+std::array<RayThread, THREAD_COUNT> threads;
 
 void init_raytracer()
 {
     std::srand(0);
+
+    std::vector<Ray> rays;
 
     // Generate rays:
     const auto half_height = raytracer.camera.h / 2.0f;
@@ -257,88 +353,42 @@ void init_raytracer()
 
             r.direction = glm::normalize(r.direction);
 
-            raytracer.rays.push_back(r);
+            rays.push_back(r);
         }
     }
     // Fill scene:
     const glm::vec3 plane_pos = {0, 0, 0};
     const glm::vec3 plane_normal = {0, 0 , 1};
     raytracer.scene.push_back(std::make_shared<Plane>(plane_pos, plane_normal));
-    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 4, -0.5f}, 1));
+    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 2, -0.5f}, 1));
     // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 4, -0.5f}, 1));
     // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
     raytracer.scene.push_back(std::make_shared<Triangle>(glm::vec3{1, 2, -1.5f}, glm::vec3{1, 0, 0}, glm::vec3{0, 0, 0}, glm::vec3{0, 0, -1}));
+
+    std::size_t ray_index = 0;
+    for (auto& ray_thread : threads)
+    {
+        for (std::size_t current = ray_index * RAYS_PER_THREAD,
+              end = (ray_index + 1) * RAYS_PER_THREAD;
+             current < end;
+             current++
+         )
+        {
+            if (current >= RAYS_TOTAL)
+            {
+                break;
+            }
+
+            ray_thread.rays.push_back(rays.at(current));
+        }
+        std::cout << "This thread has: " << ray_thread.rays.size() << " rays  " << std::endl;
+        ray_thread.thread = std::thread(&RayThread::loop, &ray_thread); 
+        ray_index++;
+    }
 }
 
 void update_raytracer()
 {
-    for (int i = 1; i < 3; i++)
-    {
-    auto& sphere = raytracer.scene.at(i);
-    const auto& position = sphere->get_position();
-    glm::vec3 new_pos = position;
-    static float timer = 0;
-    timer += 0.05f;
-
-    new_pos.y += std::sin(timer) / 10;
-    new_pos.x += std::cos(timer) / 10;
-
-    sphere->set_position(new_pos);
-
-    sphere->recalc();
-    }
-
-    for (const auto& r : raytracer.rays)
-    {
-        Color color;
-        Ray out;
-        float intersection_distance = 999999;
-        std::shared_ptr<SceneEntity> collided_entity = nullptr;
-        for (const auto& scene_entity : raytracer.scene)
-        {
-            Color temp_c;
-            Ray temp_out;
-            const float id = scene_entity->intersection(r, temp_out, temp_c);
-            if (id != 0 && id < intersection_distance)
-            {
-                intersection_distance = id;
-                collided_entity = scene_entity;
-                color = temp_c;
-                out = temp_out;
-            }
-        }
-
-        if (collided_entity == nullptr)
-        { 
-            set_pixel(r.x, r.y, black);
-        } 
-        else
-        {
-            bool second_reflection = false;
-            Color second_color = {0, 0, 0};
-            for (const auto& scene_entity : raytracer.scene)
-            {
-                if (collided_entity == scene_entity)
-                {
-                    continue;
-                }
-
-                Color temp_c;
-                Ray temp_out;
-                const float id = scene_entity->intersection(out, temp_out, temp_c);
-                if (id != 0 && id < intersection_distance)
-                {
-                    second_color = temp_c;
-                    second_reflection = true;
-                }
-            }
-
-            const auto out_color = (color * (second_reflection ? 0.5f : 1.0f))
-                                     + (second_color * 0.5f);
-
-            set_pixel(r.x, r.y, out_color);
-        } 
-    }
 } 
  
 int main(int argc, char **argv) {
@@ -402,8 +452,39 @@ int main(int argc, char **argv) {
             SDL_Log("Unable to lock texture: %s", SDL_GetError());
         }
         else {
+
+            while (threads_finished_count != THREAD_COUNT)
+            {
+            }
+
             memcpy(texture_pixels, pixels, texture_pitch * WIN_HEIGHT);
+
+
+    for (int i = 1; i < 3; i++)
+    {
+    auto& sphere = raytracer.scene.at(i);
+    const auto& position = sphere->get_position();
+    glm::vec3 new_pos = position;
+    static float timer = 0;
+    timer += 0.05f;
+
+    new_pos.y += std::sin(timer) / 10;
+    new_pos.x += std::cos(timer) / 10;
+
+    sphere->set_position(new_pos);
+
+    sphere->recalc();
+    }
+
+
+            threads_finished_count = 0;
+            
+            for (auto& thread : threads)
+            {
+                thread.cv.notify_one();
+            }
         }
+
         SDL_UnlockTexture(texture);
 
         // render on screen
@@ -411,13 +492,21 @@ int main(int argc, char **argv) {
         SDL_RenderCopy(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
 
-        update_raytracer();
+        // update_raytracer();
     }
 
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
+
+    app_quit = true;
+
+    for (auto& ray_thread : threads)
+    {
+        ray_thread.cv.notify_one();
+        ray_thread.thread.join();
+    }
 
     return 0;
 }
