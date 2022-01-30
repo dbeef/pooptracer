@@ -19,6 +19,7 @@
 * Math is a little shady, make small reproducible scenes (defined in YML) to verify each part 
 * Better color blending & Reflectivity modifier
 * Framebuffer postprocessing
+* Light source - add skybox in form of a plane above, if skybox hit, modify colors accordingly
 
 ### License:
 
