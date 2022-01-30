@@ -5,15 +5,17 @@
 #include <vector>
 #include <iostream>
 #include <memory>
+#include <random>
 
 #include <SDL.h>
 
-#define WIN_WIDTH 160
-#define WIN_HEIGHT 120
+#define WIN_WIDTH 320
+#define WIN_HEIGHT 240
 
-// TODO: Optimize
+// TODO: Optimize, multiple threads
 // TODO: Cleanup + CMake project
-// TODO: Ray reflection from surfaces
+// TODO: Add rotating triangle
+// TODO: Benchmark project
 
 uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
 
@@ -33,6 +35,7 @@ static Color white = {255, 255, 255};
 static Color black = {0, 0, 0};
 static Color red = {255, 0, 0};
 static Color blue= {0, 0, 255};
+static Color light_blue= {50, 50, 255};
 static Color green= {0, 255, 0};
 
 Color* get_pixel(int n)
@@ -82,23 +85,73 @@ struct Ray
 class SceneEntity
 {
 public:
+    // TODO: Rotate
     SceneEntity(const glm::vec3& pos) : _pos(pos) {}
     virtual float intersection(const Ray& in, Ray& out, Color& color) = 0;
-    // TODO: Return reflected ray
-    // TODO: Return color at place of intersection
     void set_position(const glm::vec3& pos) { _pos = pos; }
     const glm::vec3& get_position() const { return _pos; }
+    virtual void recalc() = 0;
 protected:
     glm::vec3 _pos;
+};
+
+class Triangle : public SceneEntity
+{
+public:
+    Triangle(const glm::vec3 origin, const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3)
+        : _v1(v1), _v2(v2), _v3(v3), SceneEntity(origin)
+    {
+        // TODO: Calc normal
+        // TODO: Calc normal in plane
+        // TODO: Function to change pos / rotate
+        recalc();
+    }
+
+    void recalc() override
+    {
+        _v1_translated = _v1 + _pos;
+        _v2_translated = _v2 + _pos;
+        _v3_translated = _v3 + _pos;
+        _normal = glm::cross(_v1_translated, _v2_translated);
+    };
+
+    float intersection(const Ray& in, Ray& out, Color& color) override
+    {
+        color = light_blue;
+
+        glm::vec2 bary;
+
+        float intersection_distance;
+        const bool intersection = glm::intersectRayTriangle(
+            in.position, in.direction, _v1_translated, _v2_translated, _v3_translated, bary, intersection_distance
+        );
+
+        const auto intersection_point = in.position + (in.direction * intersection_distance);
+        out.direction = glm::normalize(_normal + in.direction);
+        out.position = intersection_point;
+        out.direction.z *= -1;
+
+        return intersection ? intersection_distance : 0;
+    }
+private:
+    glm::vec3 _v1;    
+    glm::vec3 _v2;    
+    glm::vec3 _v3;
+    glm::vec3 _v1_translated;    
+    glm::vec3 _v2_translated;    
+    glm::vec3 _v3_translated; 
+    glm::vec3 _normal; 
 };
 
 class Sphere : public SceneEntity
 {
 public:
+
+    void recalc() override {};
     Sphere(const glm::vec3& pos, float radius) : SceneEntity(pos), _radius_squared(radius * radius) { }
     float intersection(const Ray& in, Ray& out, Color& color) override
     {
-        color = red;
+        color = _color;
 
         float intersection_distance;
         const bool intersection = glm::intersectRaySphere(
@@ -115,17 +168,24 @@ public:
 
         out.direction = glm::normalize(normal + in.direction);
         out.position = intersection_point;
-        // out.direction.z *= -1;
 
         return intersection ? intersection_distance : 0;
     }
 private:
+    static Color random_color()
+    {
+        return Color{std::rand() % 255, std::rand() % 255, std::rand() % 255};
+    }
+
+    const Color _color = random_color();
     const float _radius_squared;
 };
 
 class Plane : public SceneEntity
 {
 public:
+
+    void recalc() override {};
     Plane(const glm::vec3& pos, const glm::vec3& normal) : SceneEntity(pos), _normal(normal)
     {
     }
@@ -166,6 +226,8 @@ struct
 
 void init_raytracer()
 {
+    std::srand(0);
+
     // Generate rays:
     const auto half_height = raytracer.camera.h / 2.0f;
     const auto half_width = raytracer.camera.w / 2.0f;
@@ -204,13 +266,14 @@ void init_raytracer()
     raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 4, -0.5f}, 1));
     // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 4, -0.5f}, 1));
     // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
+    raytracer.scene.push_back(std::make_shared<Triangle>(glm::vec3{1, 2, -1.5f}, glm::vec3{1, 0, 0}, glm::vec3{0, 0, 0}, glm::vec3{0, 0, -1}));
 }
 
 void update_raytracer()
 {
-    memset(pixels, 0, WIN_WIDTH * WIN_HEIGHT * 4);
-
-    auto& sphere = raytracer.scene.at(1);
+    for (int i = 1; i < 3; i++)
+    {
+    auto& sphere = raytracer.scene.at(i);
     const auto& position = sphere->get_position();
     glm::vec3 new_pos = position;
     static float timer = 0;
@@ -220,6 +283,9 @@ void update_raytracer()
     new_pos.x += std::cos(timer) / 10;
 
     sphere->set_position(new_pos);
+
+    sphere->recalc();
+    }
 
     for (const auto& r : raytracer.rays)
     {
@@ -266,10 +332,6 @@ void update_raytracer()
                 }
             }
 
-            // Calculate reflected ray:
-            // TODO: Walk over each scene entity, test for intersection
-            // Apply color, blend if reflection found another scene entity:
-            // TODO: Reflectivity parameter
             const auto out_color = (color * (second_reflection ? 0.5f : 1.0f))
                                      + (second_color * 0.5f);
 
