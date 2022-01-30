@@ -10,20 +10,17 @@
 #include <exception>
 #include <iostream>
 #include <limits>
-#include <memory>
-#include <mutex>
 #include <random>
-#include <thread>
 #include <vector>
 
-#include "raytracer/Color.hpp"
-#include "raytracer/Framebuffer.hpp"
-#include "raytracer/Options.hpp"
-#include "raytracer/RayThread.hpp"
-#include "raytracer/scene/Plane.hpp"
-#include "raytracer/scene/SceneEntity.hpp"
-#include "raytracer/scene/Sphere.hpp"
-#include "raytracer/scene/Triangle.hpp"
+#include "pooptracer/Color.hpp"
+#include "pooptracer/Framebuffer.hpp"
+#include "pooptracer/Options.hpp"
+#include "pooptracer/RayThread.hpp"
+#include "pooptracer/scene/Plane.hpp"
+#include "pooptracer/scene/SceneEntity.hpp"
+#include "pooptracer/scene/Sphere.hpp"
+#include "pooptracer/scene/Triangle.hpp"
 
 namespace
 {

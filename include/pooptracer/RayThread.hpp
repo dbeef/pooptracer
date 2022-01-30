@@ -6,10 +6,10 @@
 #include <thread>
 #include <vector>
 
-#include "raytracer/Framebuffer.hpp"
-#include "raytracer/Options.hpp"
-#include "raytracer/Ray.hpp"
-#include "raytracer/scene/SceneEntity.hpp"
+#include "pooptracer/Framebuffer.hpp"
+#include "pooptracer/Options.hpp"
+#include "pooptracer/Ray.hpp"
+#include "pooptracer/scene/SceneEntity.hpp"
 
 class RayThread
 {

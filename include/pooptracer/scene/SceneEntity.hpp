@@ -2,8 +2,8 @@
 
 #include <glm/glm.hpp>
 
-#include "raytracer/Color.hpp"
-#include "raytracer/Ray.hpp"
+#include "pooptracer/Color.hpp"
+#include "pooptracer/Ray.hpp"
 
 class SceneEntity
 {

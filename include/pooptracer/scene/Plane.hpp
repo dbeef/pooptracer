@@ -1,7 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include "raytracer/scene/SceneEntity.hpp"
+#include "pooptracer/scene/SceneEntity.hpp"
 
 class Plane : public SceneEntity
 {

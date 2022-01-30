@@ -1,7 +1,7 @@
 #pragma once
 
-#include "raytracer/Color.hpp"
-#include "raytracer/Options.hpp"
+#include "pooptracer/Color.hpp"
+#include "pooptracer/Options.hpp"
 
 class Framebuffer
 {
