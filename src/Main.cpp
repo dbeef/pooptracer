@@ -1,7 +1,7 @@
+#include <SDL.h>
 #include <glm/glm.hpp>
 #include <glm/gtx/intersect.hpp>
-#include <stdio.h>
-#include <stdbool.h>
+
 #include <vector>
 #include <iostream>
 #include <memory>
@@ -12,12 +12,10 @@
 #include <atomic>
 #include <condition_variable>
 
-#include <SDL.h>
-
 namespace
 {
-constexpr std::size_t WIN_WIDTH = 640;
-constexpr std::size_t WIN_HEIGHT = 480;
+constexpr std::size_t WIN_WIDTH = 320;
+constexpr std::size_t WIN_HEIGHT = 240;
 constexpr std::size_t THREAD_COUNT = 16;
 constexpr std::size_t RAYS_TOTAL = WIN_WIDTH * WIN_HEIGHT;
 constexpr std::size_t RAYS_PER_THREAD = std::ceil(static_cast<float>(WIN_WIDTH * WIN_HEIGHT) / THREAD_COUNT);
@@ -25,18 +23,13 @@ constexpr std::size_t RAYS_PER_THREAD = std::ceil(static_cast<float>(WIN_WIDTH *
 uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
 }
 
-// Loop:
-// Lock pixels mutex for reading, then copy
-// Notify that rays can be calculated + unlock
-// 
-// Each time thread notified, do one round of calculation and wait for notify
-
+// TODO: Split into multiple files
 // TODO: Scene defined in YML / Json
-// TODO: Optimize, multiple threads
 // TODO: Cleanup + CMake project
-// TODO: Add rotating triangle
-// TODO: Benchmark project
+// TODO: Move raytracing core to separate target, add benchmark subtarget
 // TODO: Lambda defining transformation
+// TODO: Fixed timestep - lock fps
+// TODO: Add rotating API to SceneEntity
 
 struct Color
 {
@@ -148,7 +141,6 @@ public:
         const auto intersection_point = in.position + (in.direction * intersection_distance);
         out.direction = glm::normalize(_normal + in.direction);
         out.position = intersection_point;
-        out.direction.z *= -1;
 
         return intersection ? intersection_distance : 0;
     }
@@ -361,9 +353,14 @@ void init_raytracer()
     const glm::vec3 plane_normal = {0, 0 , 1};
     raytracer.scene.push_back(std::make_shared<Plane>(plane_pos, plane_normal));
     raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0, 2, -0.5f}, 1));
-    // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 4, -0.5f}, 1));
-    // raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
-    raytracer.scene.push_back(std::make_shared<Triangle>(glm::vec3{1, 2, -1.5f}, glm::vec3{1, 0, 0}, glm::vec3{0, 0, 0}, glm::vec3{0, 0, -1}));
+    raytracer.scene.push_back(std::make_shared<Triangle>(
+        glm::vec3{2, 2, -0.5f}, 
+        glm::vec3{1, 0, 0}, glm::vec3{0, 1.0f, 0}, glm::vec3{0, 0.5f, -1}
+    ));
+    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{2, 5, -0.5f}, 1));
+    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 6, -0.5f}, 1));
+    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{-2, 2, -1.0f}, 0.3));
+    raytracer.scene.push_back(std::make_shared<Sphere>(glm::vec3{0.5, 0.5, -0.5f}, 0.20));
 
     std::size_t ray_index = 0;
     for (auto& ray_thread : threads)
@@ -460,22 +457,21 @@ int main(int argc, char **argv) {
             memcpy(texture_pixels, pixels, texture_pitch * WIN_HEIGHT);
 
 
-    for (int i = 1; i < 3; i++)
-    {
-    auto& sphere = raytracer.scene.at(i);
-    const auto& position = sphere->get_position();
-    glm::vec3 new_pos = position;
-    static float timer = 0;
-    timer += 0.05f;
-
-    new_pos.y += std::sin(timer) / 10;
-    new_pos.x += std::cos(timer) / 10;
-
-    sphere->set_position(new_pos);
-
-    sphere->recalc();
-    }
-
+            for (int i = 1; i < 2; i++)
+            {
+                auto& sphere = raytracer.scene.at(i);
+                const auto& position = sphere->get_position();
+                glm::vec3 new_pos = position;
+                static float timer = 0;
+                timer += 0.05f;
+             
+                new_pos.y += std::sin(timer) / 20;
+                new_pos.x += std::cos(timer) / 20;
+             
+                sphere->set_position(new_pos);
+             
+                sphere->recalc();
+            }
 
             threads_finished_count = 0;
             
