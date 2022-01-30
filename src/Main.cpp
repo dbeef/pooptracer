@@ -114,11 +114,11 @@ try
         throw std::runtime_error(fmt::format("Unable to initialize SDL: %s", SDL_GetError()));
     }
 
-    SDL_Window* window = SDL_CreateWindow("sdl2_pixelbuffer",
+    SDL_Window* window = SDL_CreateWindow("pooptracer",
                                           SDL_WINDOWPOS_CENTERED,
                                           SDL_WINDOWPOS_CENTERED,
-                                          Options::WIDTH * 4,
-                                          Options::HEIGHT * 4,
+                                          Options::WIDTH * Options::UPSCALE_MODIFIER,
+                                          Options::HEIGHT * Options::UPSCALE_MODIFIER,
                                           SDL_WINDOW_RESIZABLE);
     if (!window)
     {
