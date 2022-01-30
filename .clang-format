@@ -1,0 +1,31 @@
+﻿---
+BasedOnStyle: Chromium
+AccessModifierOffset: '-4'
+AlwaysBreakBeforeMultilineStrings: 'true'
+BinPackArguments: 'true'
+BinPackParameters: 'true'
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterControlStatement: true
+  AfterClass: true
+  AfterExternBlock: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterFunction: true
+  AfterEnum: true
+  AfterObjCDeclaration: true
+BreakBeforeBinaryOperators: All
+BreakBeforeBraces: Custom
+ColumnLimit: '0'
+ConstructorInitializerAllOnOneLineOrOnePerLine: 'false'
+IncludeBlocks: Preserve
+IndentPPDirectives: None
+IndentWidth: '4'
+SortIncludes: 'true'
+SpaceAfterTemplateKeyword: 'false'
+SpacesBeforeTrailingComments: '1'
+Standard: Cpp11
+TabWidth: '4'
+UseTab: Never
+...
