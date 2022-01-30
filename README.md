@@ -6,6 +6,7 @@
 |---	   |---	        |---	                |
 |   SDL2   |  2.0.10    |  zlib                 |
 |   glm    |  0.9.9.7   |  Happy bunny / MIT    |
+|   fmt    |  6.1.2     |  MIT                  |
 
 ### TODO-s
 

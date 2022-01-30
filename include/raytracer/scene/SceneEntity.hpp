@@ -8,7 +8,6 @@
 class SceneEntity
 {
 public:
-    // TODO: Rotate
     SceneEntity(const glm::vec3& pos)
         : _pos(pos) {}
 

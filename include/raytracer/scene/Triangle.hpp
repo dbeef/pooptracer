@@ -8,9 +8,6 @@ public:
     Triangle(const glm::vec3 origin, const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3)
         : _v1(v1), _v2(v2), _v3(v3), SceneEntity(origin)
     {
-        // TODO: Calc normal
-        // TODO: Calc normal in plane
-        // TODO: Function to change pos / rotate
         recalc();
     }
 

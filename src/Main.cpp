@@ -1,6 +1,7 @@
 #include <SDL.h>
 #include <glm/glm.hpp>
 #include <glm/gtx/intersect.hpp>
+#include <fmt/format.h>
 
 #include <array>
 #include <atomic>
@@ -12,20 +13,15 @@
 #include <random>
 #include <thread>
 #include <vector>
+#include <exception>
 
 #include "raytracer/Color.hpp"
+#include "raytracer/Options.hpp"
 #include "raytracer/Framebuffer.hpp"
 #include "raytracer/scene/Plane.hpp"
 #include "raytracer/scene/SceneEntity.hpp"
 #include "raytracer/scene/Sphere.hpp"
 #include "raytracer/scene/Triangle.hpp"
-
-namespace
-{
-constexpr std::size_t THREAD_COUNT = 16;
-constexpr std::size_t RAYS_TOTAL = Framebuffer::WIDTH * Framebuffer::HEIGHT;
-constexpr std::size_t RAYS_PER_THREAD = std::ceil(static_cast<float>(Framebuffer::WIDTH * Framebuffer::HEIGHT) / THREAD_COUNT);
-} // namespace
 
 struct Camera
 {
@@ -35,13 +31,13 @@ struct Camera
     Camera(){};
 
     static constexpr float f = 100;
-    int w = Framebuffer::WIDTH;
-    int h = Framebuffer::HEIGHT;
+    int w = Options::WIDTH;
+    int h = Options::HEIGHT;
     glm::vec3 position;
 };
 
 std::atomic<bool> app_quit{false};
-std::atomic<std::size_t> threads_finished_count{THREAD_COUNT};
+std::atomic<std::size_t> threads_finished_count{Options::THREAD_COUNT};
 Camera camera = Camera(glm::vec3(0.0f, 0.0f, -1.0f));
 std::vector<std::shared_ptr<SceneEntity>> scene;
 Framebuffer framebuffer;
@@ -117,11 +113,11 @@ struct RayThread
     }
 };
 
-std::array<RayThread, THREAD_COUNT> threads;
+std::array<RayThread, Options::THREAD_COUNT> threads;
 
 void init_raytracer()
 {
-    std::srand(0);
+    std::srand(Options::SEED);
 
     std::vector<Ray> rays;
 
@@ -172,12 +168,12 @@ void init_raytracer()
     std::size_t ray_index = 0;
     for (auto& ray_thread : threads)
     {
-        for (std::size_t current = ray_index * RAYS_PER_THREAD,
-                         end = (ray_index + 1) * RAYS_PER_THREAD;
+        for (std::size_t current = ray_index * Options::RAYS_PER_THREAD,
+                         end = (ray_index + 1) * Options::RAYS_PER_THREAD;
              current < end;
              current++)
         {
-            if (current >= RAYS_TOTAL)
+            if (current >= Options::RAYS_TOTAL)
             {
                 break;
             }
@@ -190,113 +186,94 @@ void init_raytracer()
     }
 }
 
-void update_raytracer()
-{
-}
-
-int main(int argc, char** argv)
+int main(int, char**)
+try
 {
     init_raytracer();
 
-    // SDL init
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
-        SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-        return 1;
+        throw std::runtime_error(fmt::format("Unable to initialize SDL: %s", SDL_GetError()));
     }
 
-    // create SDL window
     SDL_Window* window = SDL_CreateWindow("sdl2_pixelbuffer",
                                           SDL_WINDOWPOS_CENTERED,
                                           SDL_WINDOWPOS_CENTERED,
-                                          Framebuffer::WIDTH * 4,
-                                          Framebuffer::HEIGHT * 4,
+                                          Options::WIDTH * 4,
+                                          Options::HEIGHT * 4,
                                           SDL_WINDOW_RESIZABLE);
-    if (window == NULL)
+    if (!window)
     {
-        SDL_Log("Unable to create window: %s", SDL_GetError());
-        return 1;
+        throw std::runtime_error(fmt::format("Unable to create window: %s", SDL_GetError()));
     }
 
-    // create renderer
-    SDL_Renderer* renderer = SDL_CreateRenderer(
-        window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (renderer == NULL)
+    SDL_Renderer* renderer = SDL_CreateRenderer( window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
+    if (!renderer)
     {
-        SDL_Log("Unable to create renderer: %s", SDL_GetError());
-        return 1;
+        throw std::runtime_error(fmt::format("Unable to create renderer: %s", SDL_GetError()));
     }
 
-    SDL_RenderSetLogicalSize(renderer, Framebuffer::WIDTH, Framebuffer::HEIGHT);
-
-    // create texture
+    SDL_RenderSetLogicalSize(renderer, Options::WIDTH, Options::HEIGHT);
     SDL_Texture* texture = SDL_CreateTexture(
         renderer,
         SDL_PIXELFORMAT_RGBA32,
         SDL_TEXTUREACCESS_STREAMING,
-        Framebuffer::WIDTH,
-        Framebuffer::HEIGHT);
-    if (texture == NULL)
+        Options::WIDTH,
+        Options::HEIGHT);
+
+    if (!texture)
     {
-        SDL_Log("Unable to create texture: %s", SDL_GetError());
-        return 1;
+        throw std::runtime_error(fmt::format("Unable to create texture: %s", SDL_GetError()));
     }
 
-    // main loop
     bool should_quit = false;
-    SDL_Event e;
+    SDL_Event event;
+
     while (!should_quit)
     {
-        while (SDL_PollEvent(&e) != 0)
+        while (SDL_PollEvent(&event) != 0)
         {
-            if (e.type == SDL_QUIT)
+            if (event.type == SDL_QUIT)
             {
                 should_quit = true;
             }
         }
 
-        // update texture with new data
+        // Rotate sphere;
+        // TODO: Move this out of the loop
+        auto& sphere = scene.at(1);
+        const auto& position = sphere->get_position();
+        glm::vec3 new_pos = position;
+        static float timer = 0;
+        timer += 0.05f;
+        new_pos.y += std::sin(timer) / 20;
+        new_pos.x += std::cos(timer) / 20;
+        sphere->set_position(new_pos);
+        sphere->recalc();
+
         int texture_pitch = 0;
-        void* texture_pixels = NULL;
-        if (SDL_LockTexture(texture, NULL, &texture_pixels, &texture_pitch) != 0)
+        void* texture_pixels = nullptr;
+
+        const auto lock_result = SDL_LockTexture(texture, nullptr, &texture_pixels, &texture_pitch);
+        assert(lock_result == 0);
+
+        while (threads_finished_count != Options::THREAD_COUNT)
         {
-            SDL_Log("Unable to lock texture: %s", SDL_GetError());
-        } else
+            // Active waiting while ray-threads have not finished writing to buffer
+        }
+
+        memcpy(texture_pixels, framebuffer.data(), texture_pitch * Options::HEIGHT);
+        threads_finished_count = 0;
+
+        for (auto& thread : threads)
         {
-            while (threads_finished_count != THREAD_COUNT)
-            {
-            }
-
-            memcpy(texture_pixels, framebuffer.data(), texture_pitch * Framebuffer::HEIGHT);
-
-            for (int i = 1; i < 2; i++)
-            {
-                auto& sphere = scene.at(i);
-                const auto& position = sphere->get_position();
-                glm::vec3 new_pos = position;
-                static float timer = 0;
-                timer += 0.05f;
-
-                new_pos.y += std::sin(timer) / 20;
-                new_pos.x += std::cos(timer) / 20;
-
-                sphere->set_position(new_pos);
-
-                sphere->recalc();
-            }
-
-            threads_finished_count = 0;
-
-            for (auto& thread : threads)
-            {
-                thread.cv.notify_one();
-            }
+            thread.cv.notify_one();
         }
 
         SDL_UnlockTexture(texture);
-
         SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
     }
 
@@ -313,5 +290,16 @@ int main(int argc, char** argv)
         ray_thread.thread.join();
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
+catch (const std::exception& e)
+{
+    std::cerr << "Unhandled exception: " << e.what() << std::endl;
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    std::cerr << "Unknown exception" << std::endl;
+    return EXIT_FAILURE;
+}
+

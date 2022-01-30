@@ -1,15 +1,11 @@
 #pragma once
 
 #include "raytracer/Color.hpp"
+#include "raytracer/Options.hpp"
 
 class Framebuffer
 {
 public:
-    using Res_t = std::uint32_t;
-
-    static constexpr Res_t WIDTH = 320;
-    static constexpr Res_t HEIGHT = 240;
-
     Color& get_pixel(Res_t n)
     {
         return pixels[n];
@@ -17,7 +13,7 @@ public:
 
     Color& get_pixel(Res_t x, Res_t y)
     {
-        return get_pixel((y * WIDTH) + x);
+        return get_pixel((y * Options::WIDTH) + x);
     }
 
     void set_pixel(Res_t n, Color color)
@@ -27,7 +23,7 @@ public:
 
     void set_pixel(Res_t x, Res_t y, Color color)
     {
-        set_pixel((y * WIDTH) + x, color);
+        set_pixel((y * Options::WIDTH) + x, color);
     }
 
     const char* data() const
@@ -36,5 +32,5 @@ public:
     }
 
 private:
-    Color pixels[WIDTH * HEIGHT] = {0};
+    Color pixels[Options::WIDTH * Options::HEIGHT];
 };
