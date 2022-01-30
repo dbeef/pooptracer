@@ -16,6 +16,7 @@
 // TODO: Cleanup + CMake project
 // TODO: Add rotating triangle
 // TODO: Benchmark project
+// TODO: Lambda defining transformation
 
 uint8_t pixels[WIN_WIDTH * WIN_HEIGHT * 4] = {0};
 
@@ -383,10 +384,6 @@ int main(int argc, char **argv) {
         SDL_Log("Unable to create texture: %s", SDL_GetError());
         return 1;
     }
-
-    set_pixel(0, {255, 0, 0});
-    set_pixel(1, {0, 255, 0});
-    set_pixel(2, {0, 0, 255});
 
     // main loop
     bool should_quit = false;
