@@ -22,6 +22,7 @@
 * Light source - add skybox in form of a plane above, if skybox hit, modify colors accordingly
 * Support for different camera models
 * Rework to ECS
+* Mouse picking
 
 ### License:
 
