@@ -23,6 +23,7 @@
 * Support for different camera models
 * Rework to ECS
 * Mouse picking
+* Moving camera
 
 ### License:
 
